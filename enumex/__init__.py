@@ -1,10 +1,10 @@
 import sys
 
-__version__ = "3.9.0"
+__version__ = "3.9.7"
 
-if sys.version_info[:2] != (3, 9):
+if sys.version_info[:3] < (3, 9, 7) or sys.version_info[:2] > (3, 9):
     raise RuntimeError(
-        f"This version of enumex is exclusive to Python 3.9.x, "
+        f"This version of enumex is exclusive to Python 3.9, patch 7 or greater, "
         f"and you are using {sys.version_info.major}.{sys.version_info.minor}"
     )
 
