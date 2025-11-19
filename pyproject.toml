@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "enumex"
-version = "3.11.0"
+version = "3.11.9"
 description = "An extension to the standard enum with polymorphism, and abstract methods."
 readme = "README.md"
 license = "Python-2.0"
 authors = [{ name = "Addio" }]
-requires-python = ">=3.11,<3.12"
+requires-python = ">=3.11.9,<3.12"
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
