@@ -110,8 +110,7 @@ class EnumExType(enum.EnumMeta, ABCMeta):
     @classmethod
     def __prepare__(metacls, cls, bases, **kwds):
         # create the namespace dict
-        enum_dict = _EnumDict()
-        enum_dict._cls_name = cls
+        enum_dict = _EnumDict(cls)
         # inherit previous flags and _generate_next_value_ function
         member_type, first_enum, first_std_base = metacls._get_mixins_(cls, bases)
         if first_enum is not None:
@@ -183,7 +182,8 @@ class EnumExType(enum.EnumMeta, ABCMeta):
         classdict['_member_names_'] = []
         classdict['_member_map_'] = {}
         classdict['_value2member_map_'] = {}
-        classdict['_unhashable_values_'] = []
+        classdict['_hashable_values_'] = []          # for comparing with non-hashable types
+        classdict['_unhashable_values_'] = []       # e.g. frozenset() with set()
         classdict['_unhashable_values_map_'] = {}
         classdict['_member_type_'] = member_type
         # now set the __repr__ for the value
@@ -205,15 +205,11 @@ class EnumExType(enum.EnumMeta, ABCMeta):
             classdict['_%s__in_progress' % cls] = False
             delattr(enum_class, '_%s__in_progress' % cls)
         except Exception as e:
-            # since 3.12 the line "Error calling __set_name__ on '_proto_member' instance ..."
-            # is tacked on to the error instead of raising a RuntimeError
-            # recreate the exception to discard
-            exc = type(e)(str(e))
-            exc.__cause__ = e.__cause__
-            exc.__context__ = e.__context__
-            tb = e.__traceback__
-        if exc is not None:
-            raise exc.with_traceback(tb)
+            # since 3.12 the note "Error calling __set_name__ on '_proto_member' instance ..."
+            # is tacked on to the error instead of raising a RuntimeError, so discard it
+            if hasattr(e, '__notes__'):
+                del e.__notes__
+            raise
         #
         # update classdict with any changes made by __init_subclass__
         classdict.update(enum_class.__dict__)
