@@ -2,6 +2,10 @@
 
 The change log contains a mix of functional and notable technical changes to enumex.py, for more info on the base changes you will need to see the Python change log.
 
+## V3.12.3
+- Mirroring changes to `enum.py` overrides
+- Removed redundant `FlagEx` operators (`enum.Flag` invoking `_get_value` again )
+
 ## V3.12.0
 - Mirroring changes to `enum.py` overrides
 - Re-added `FlagEx` operators (`enum.Flag` no longer calls into `_get_value`)
