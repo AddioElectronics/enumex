@@ -1,13 +1,8 @@
-import sys
-import builtins as bltns
 import threading
-from types import MappingProxyType, DynamicClassAttribute
-from operator import or_ as _or_
-from functools import reduce
 from abc import ABC, ABCMeta, update_abstractmethods
 import enum
 from enum import Enum, IntEnum, Flag, IntFlag, StrEnum, ReprEnum
-from enum import _make_class_unpicklable, _is_single_bit, _proto_member
+from enum import _is_single_bit, _proto_member
 from enum import _EnumDict
 from enum import STRICT, CONFORM, EJECT, KEEP
 from typing import Callable
@@ -205,12 +200,16 @@ class EnumExType(enum.EnumMeta, ABCMeta):
         try:
             exc = None
             enum_class = type.__new__(metacls, cls, bases, classdict, **kwds)
-        except RuntimeError as e:
-            # any exceptions raised by member.__new__ will get converted to a
-            # RuntimeError, so get that original exception back and raise it instead
-            exc = e.__cause__ or e
+        except Exception as e:
+            # since 3.12 the line "Error calling __set_name__ on '_proto_member' instance ..."
+            # is tacked on to the error instead of raising a RuntimeError
+            # recreate the exception to discard
+            exc = type(e)(str(e))
+            exc.__cause__ = e.__cause__
+            exc.__context__ = e.__context__
+            tb = e.__traceback__
         if exc is not None:
-            raise exc
+            raise exc.with_traceback(tb)
         #
         # update classdict with any changes made by __init_subclass__
         classdict.update(enum_class.__dict__)
@@ -635,40 +634,7 @@ class FlagEx(Flag, EnumEx, boundary=STRICT):
         elif self._member_type_ is not object and isinstance(flag, self._member_type_):
             return flag
         return NotImplemented
-    
-    def __or__(self, other):
-        other_value = self._get_value(other)
-        if other_value is NotImplemented:
-            return NotImplemented
-
-        for flag in self, other:
-            if self._get_value(flag) is None:
-                raise TypeError(f"'{flag}' cannot be combined with other flags with |")
-        value = self._value_
-        return self.__class__(value | other_value)
-
-    def __and__(self, other):
-        other_value = self._get_value(other)
-        if other_value is NotImplemented:
-            return NotImplemented
-
-        for flag in self, other:
-            if self._get_value(flag) is None:
-                raise TypeError(f"'{flag}' cannot be combined with other flags with &")
-        value = self._value_
-        return self.__class__(value & other_value)
-
-    def __xor__(self, other):
-        other_value = self._get_value(other)
-        if other_value is NotImplemented:
-            return NotImplemented
-
-        for flag in self, other:
-            if self._get_value(flag) is None:
-                raise TypeError(f"'{flag}' cannot be combined with other flags with ^")
-        value = self._value_
-        return self.__class__(value ^ other_value)
-    
+        
 class IntFlagEx(IntFlag, ReprEnumEx, FlagEx, boundary=KEEP):
     """
     Support for integer-based Flags
