@@ -895,6 +895,37 @@ class EnumExTests(unittest.TestCase):
         self.assertEqual(1,     and_result,     msg="int & A equal")
         self.assertEqual(0b11,  xor_result,     msg="int ^ A equal")
 
+    def test_intflagex_operators_std_instance(self):
+        """
+            Tests the result from IntFlagEx bitwise ops with the result from IntFlag bitwise ops
+            to ensure it returns the same instance as IntFlag.
+        """
+
+        class A(IntFlagEx):
+            F1 = auto()
+            F2 = auto()
+
+        class X(IntFlag):
+            F1 = auto()
+            F2 = auto()
+
+        def test(exright, stdright, func, opname):
+            std_res = func(X.F1, stdright)
+            ex_res = func(A.F1, exright)
+            self.assertEqual(
+                isinstance(ex_res, A),
+                isinstance(std_res, X),
+                msg=f"IntFlag Compare {opname} result instance with std"
+            )
+
+        test(2, 2, lambda l, r: l | r, "OR int")
+        test(2, 2, lambda l, r: l & r, "AND int")
+        test(2, 2, lambda l, r: l ^ r, "XOR int")
+
+        test(X.F1, A.F1, lambda l, r: l | r, "OR int")
+        test(X.F1, A.F1, lambda l, r: l & r, "AND int")
+        test(X.F1, A.F1, lambda l, r: l ^ r, "XOR int")
+
     def test_intflagex_operators_abstract(self):
         class A(ABC, IntFlagEx):
             F1 = auto()

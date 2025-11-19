@@ -1,8 +1,13 @@
+import sys
+import builtins as bltns
 import threading
+from types import MappingProxyType, DynamicClassAttribute
+from operator import or_ as _or_
+from functools import reduce
 from abc import ABC, ABCMeta, update_abstractmethods
 import enum
 from enum import Enum, IntEnum, Flag, IntFlag, StrEnum, ReprEnum
-from enum import _is_single_bit, _proto_member
+from enum import _make_class_unpicklable, _is_single_bit, _proto_member
 from enum import _EnumDict
 from enum import STRICT, CONFORM, EJECT, KEEP
 from typing import Callable
@@ -158,8 +163,13 @@ class EnumExType(enum.EnumMeta, ABCMeta):
         #
         # adjust the sunders
         _order_ = classdict.pop('_order_', None)
+        _gnv = classdict.get('_generate_next_value_')
+        if _gnv is not None and type(_gnv) is not staticmethod:
+            _gnv = staticmethod(_gnv)
         # convert to normal dict
         classdict = dict(classdict.items())
+        if _gnv is not None:
+            classdict['_generate_next_value_'] = _gnv
         #
         # data type of member and the controlling Enum class
         member_type, first_enum, std_base = metacls._get_mixins_(cls, bases)
@@ -246,7 +256,7 @@ class EnumExType(enum.EnumMeta, ABCMeta):
                     '__invert__'
                 ):
                 if name not in classdict:
-                    enum_method = getattr(Flag, name)
+                    enum_method = getattr(FlagEx, name)
                     setattr(enum_class, name, enum_method)
                     classdict[name] = enum_method
         #
@@ -369,7 +379,7 @@ class EnumExType(enum.EnumMeta, ABCMeta):
  
     @classmethod
     def _find_data_type_(mcls, class_name, bases):
-        # a datatype has a __new__ method
+        # a datatype has a __new__ method, or a __dataclass_fields__ attribute
         data_types = set()
         base_chain = set()
         for chain in bases:
@@ -386,8 +396,6 @@ class EnumExType(enum.EnumMeta, ABCMeta):
                         data_types.add(base._member_type_)
                         break
                 elif '__new__' in base.__dict__ or '__dataclass_fields__' in base.__dict__:
-                    if isinstance(base, EnumExType):
-                        continue
                     data_types.add(candidate or base)
                     break
                 else:
@@ -627,6 +635,39 @@ class FlagEx(Flag, EnumEx, boundary=STRICT):
         elif self._member_type_ is not object and isinstance(flag, self._member_type_):
             return flag
         return NotImplemented
+    
+    def __or__(self, other):
+        other_value = self._get_value(other)
+        if other_value is NotImplemented:
+            return NotImplemented
+
+        for flag in self, other:
+            if self._get_value(flag) is None:
+                raise TypeError(f"'{flag}' cannot be combined with other flags with |")
+        value = self._value_
+        return self.__class__(value | other_value)
+
+    def __and__(self, other):
+        other_value = self._get_value(other)
+        if other_value is NotImplemented:
+            return NotImplemented
+
+        for flag in self, other:
+            if self._get_value(flag) is None:
+                raise TypeError(f"'{flag}' cannot be combined with other flags with &")
+        value = self._value_
+        return self.__class__(value & other_value)
+
+    def __xor__(self, other):
+        other_value = self._get_value(other)
+        if other_value is NotImplemented:
+            return NotImplemented
+
+        for flag in self, other:
+            if self._get_value(flag) is None:
+                raise TypeError(f"'{flag}' cannot be combined with other flags with ^")
+        value = self._value_
+        return self.__class__(value ^ other_value)
     
 class IntFlagEx(IntFlag, ReprEnumEx, FlagEx, boundary=KEEP):
     """
