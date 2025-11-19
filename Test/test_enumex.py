@@ -4,16 +4,20 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 import unittest 
+import enumex
 from enumex import *
 from enum import auto
 from enum import Enum
 from enum import IntEnum
 from enum import Flag
 from enum import IntFlag
+from enum import StrEnum
+from enum import ReprEnum
+from enum import STRICT, CONFORM, EJECT, KEEP
 from abc import ABC, abstractmethod
 from typing import Union, Callable
 
-class enumexests(unittest.TestCase):
+class EnumExTests(unittest.TestCase):
 
     def test_standard_functionality(self):
         class A(EnumEx):
@@ -32,7 +36,7 @@ class enumexests(unittest.TestCase):
 
         with self.assertRaises(AttributeError) as ec:
             A.V1 = 1
-        self.assertEqual("Cannot reassign members.", ec.exception.args[0])
+        self.assertEqual("cannot reassign member 'V1'", ec.exception.args[0])
 
     def test_std_auto(self):
         class A(EnumEx):
@@ -60,18 +64,28 @@ class enumexests(unittest.TestCase):
         class D(IntFlagEx):
             V1 = auto()
 
-        def test_isinstance(localcls:type[EnumEx], intenum:bool, flag:bool, intflag:bool):
+        class E(StrEnumEx):
+            V1 = auto()
+
+        class F(int, ReprEnumEx):
+            V1 = auto()
+
+        def test_isinstance(localcls:type[EnumEx], intenum:bool, flag:bool, intflag:bool, reprenum:bool, strenum:bool):
             msg = f"Testing {localcls.__name__} is "
             value:EnumEx = localcls.V1
             self.assertIsInstance(                value, EnumEx,      msg + f"instance of EnumEx")
             self.assertEqual(intenum,  isinstance(value, IntEnumEx),  msg + f"{'' if intenum   else 'not '}instance of IntEnumEx")
             self.assertEqual(flag,     isinstance(value, FlagEx),     msg + f"{'' if flag      else 'not '}instance of FlagEx")
             self.assertEqual(intflag,  isinstance(value, IntFlagEx),  msg + f"{'' if intflag   else 'not '}instance of IntFlagEx")
+            self.assertEqual(reprenum, isinstance(value, ReprEnumEx), msg + f"{'' if reprenum  else 'not '}instance of ReprEnumEx")
+            self.assertEqual(strenum,  isinstance(value, StrEnumEx),  msg + f"{'' if strenum   else 'not '}instance of StrEnumEx")
 
-        test_isinstance(A, intenum=False,  flag=False, intflag=False)   # EnumEx
-        test_isinstance(B, intenum=True,   flag=False, intflag=False)   # IntEnumEx
-        test_isinstance(C, intenum=False,  flag=True,  intflag=False)   # FlagEx
-        test_isinstance(D, intenum=False,  flag=True,  intflag=True)    # IntFlagEx
+        test_isinstance(A, intenum=False,  flag=False, intflag=False,  reprenum=False, strenum=False)   # EnumEx
+        test_isinstance(B, intenum=True,   flag=False, intflag=False,  reprenum=True,  strenum=False)   # IntEnumEx
+        test_isinstance(C, intenum=False,  flag=True,  intflag=False,  reprenum=False, strenum=False)   # FlagEx
+        test_isinstance(D, intenum=False,  flag=True,  intflag=True,   reprenum=True,  strenum=False)   # IntFlagEx
+        test_isinstance(E, intenum=False,  flag=False, intflag=False,  reprenum=True,  strenum=True)    # StrEnumEx
+        test_isinstance(F, intenum=False,  flag=False, intflag=False,  reprenum=True,  strenum=False)   # ReprEnumEx
 
         def test_issubclass_std(extype:type[EnumEx], stdtype:type[Enum]):
             msg = f"Testing issubclass of {stdtype.__name__}"
@@ -79,11 +93,15 @@ class enumexests(unittest.TestCase):
             self.assertEqual(issubclass(IntEnumEx,   extype),    issubclass(IntEnumEx,   stdtype),  msg)
             self.assertEqual(issubclass(IntFlagEx,   extype),    issubclass(IntFlagEx,   stdtype),  msg)
             self.assertEqual(issubclass(FlagEx,      extype),    issubclass(FlagEx,      stdtype),  msg)
+            self.assertEqual(issubclass(ReprEnumEx,  extype),    issubclass(ReprEnumEx,  stdtype),  msg)
+            self.assertEqual(issubclass(StrEnumEx,   extype),    issubclass(StrEnumEx,   stdtype),  msg)
     
             self.assertEqual(issubclass(A,           extype),    issubclass(A,           stdtype),  msg) # EnumEx
             self.assertEqual(issubclass(B,           extype),    issubclass(B,           stdtype),  msg) # IntEnumEx
             self.assertEqual(issubclass(C,           extype),    issubclass(C,           stdtype),  msg) # FlagEx
             self.assertEqual(issubclass(D,           extype),    issubclass(D,           stdtype),  msg) # IntFlagEx
+            self.assertEqual(issubclass(E,           extype),    issubclass(E,           stdtype),  msg) # StrEnumEx
+            self.assertEqual(issubclass(F,           extype),    issubclass(F,           stdtype),  msg) # ReprEnumEx
 
         def test_isinstance_std(localcls:type[EnumEx]):
             msg = f"Testing {localcls.__name__} isinstance of "
@@ -92,16 +110,22 @@ class enumexests(unittest.TestCase):
             self.assertEqual(isinstance(val, IntEnumEx),         isinstance(val, IntEnumEx),        msg + f" {IntEnumEx.__name__}")
             self.assertEqual(isinstance(val, IntFlagEx),         isinstance(val, IntFlagEx),        msg + f" {IntFlagEx.__name__}")
             self.assertEqual(isinstance(val, FlagEx),            isinstance(val, FlagEx),           msg + f" {FlagEx.__name__}")
+            self.assertEqual(isinstance(val, ReprEnumEx),        isinstance(val, ReprEnumEx),       msg + f" {ReprEnumEx.__name__}")
+            self.assertEqual(isinstance(val, StrEnumEx),         isinstance(val, StrEnumEx),        msg + f" {StrEnumEx.__name__}")
 
         test_issubclass_std(EnumEx,         Enum)
         test_issubclass_std(IntEnumEx,      IntEnum)
         test_issubclass_std(IntFlagEx,      IntFlag)
         test_issubclass_std(FlagEx,         Flag)
+        test_issubclass_std(ReprEnumEx,     ReprEnum)
+        test_issubclass_std(StrEnumEx,      StrEnum)
 
         test_isinstance_std(A)  # EnumEx
         test_isinstance_std(B)  # IntEnumEx
         test_isinstance_std(C)  # FlagEx
         test_isinstance_std(D)  # IntFlagEx
+        test_isinstance_std(E)  # StrEnumEx
+        test_isinstance_std(F)  # ReprEnumEx
     
     def test_enumex_auto_inheritance(self):
         class A(EnumEx):
@@ -182,8 +206,34 @@ class enumexests(unittest.TestCase):
         print(", ".join(str(v) for v in list(A)))
         print(", ".join(str(v) for v in list(B)))
 
-        self.assertListEqual([A.F1, A.F2, A.F3], list(A))
-        self.assertListEqual([A.F1, A.F2, A.F3, B.F4, B.F5], list(B))
+        self.assertListEqual([A.F1, A.F2], list(A))
+        self.assertListEqual([A.F1, A.F2, B.F4, B.F5], list(B))
+
+    def test_strenumex_auto_inheritance(self):
+        class A(StrEnumEx):
+            V1 = auto()
+            V2 = '2'
+            V3 = V2
+        class B(A):
+            V4 = auto()
+            V5 = auto()
+
+        self.assertIsInstance(A.V1,     A)
+        self.assertIsInstance(B.V1,     A)
+        self.assertIsInstance(B.V4,     A)
+        self.assertIsInstance(B.V1,     B)
+        self.assertNotIsInstance(A.V1,  B)
+        self.assertEqual('v1',          A.V1.value)
+        self.assertEqual('2',           A.V2.value)
+        self.assertEqual('2',           A.V3.value)
+        self.assertEqual('v1',          B.V1.value)
+        self.assertEqual('2',           B.V2.value)
+        self.assertEqual('2',           B.V3.value)
+        self.assertEqual('v4',          B.V4.value)
+        self.assertEqual('v5',          B.V5.value)
+
+        self.assertListEqual([A.V1, A.V3], list(A))
+        self.assertListEqual([A.V1, A.V3, B.V4, B.V5], list(B))
 
     def test_errors(self):
         with self.assertRaises(TypeError) as ec:
@@ -193,7 +243,7 @@ class enumexests(unittest.TestCase):
                 V3 = 3
             class B(A):
                 V3 = A.V3
-        self.assertEqual("Attempted to reuse key: 'V3'", ec.exception.args[0])
+        self.assertEqual("'V3' already defined as 3", ec.exception.args[0])
         
     def test_instance_methods(self):
         class A(EnumEx):
@@ -663,7 +713,7 @@ class enumexests(unittest.TestCase):
                 ec.exception.args[0], 
                 msg=f"FlagEx A OR {right.__class__.__name__} error message"
                 )
-
+ 
             with self.assertRaises(TypeError) as ec:
                 result = A.F1 & right
             self.assertEqual(
@@ -845,46 +895,6 @@ class enumexests(unittest.TestCase):
         self.assertEqual(1,     and_result,     msg="int & A equal")
         self.assertEqual(0b11,  xor_result,     msg="int ^ A equal")
 
-    def test_intflagex_not_operator_default(self):
-        from enum import IntFlag
-        class A(IntFlagEx):
-            F1 = auto()
-            F2 = auto()
-            F3 = auto()
-            F4 = auto()
-        class B(A):
-            F5 = auto()
-            F6 = auto()
-
-        class X(IntFlag):
-            F1 = auto()
-            F2 = auto()
-            F3 = auto()
-            F4 = auto()
-        class Y(IntFlag):
-            F1 = auto()
-            F2 = auto()
-            F3 = auto()
-            F4 = auto()
-            F5 = auto()
-            F6 = auto()
-
-        std_result = ~X.F1
-        not_result = ~A.F1
-        expected = ~1
-
-        self.assertIsInstance(not_result, A,     msg="NOT is A")
-        self.assertEqual(expected, not_result,   msg="~ equal")
-        self.assertEqual(std_result, not_result, msg="~IntFlagEx == ~IntFlag")
-
-        std_result = ~Y.F5
-        not_result = ~B.F5
-        expected = ~(1 << 4)
-
-        self.assertIsInstance(not_result, B,     msg="NOT is B")
-        self.assertEqual(expected, not_result,   msg="~ equal")
-        self.assertEqual(std_result, not_result, msg="~IntFlagEx == ~IntFlag")
-
     def test_intflagex_operators_abstract(self):
         class A(ABC, IntFlagEx):
             F1 = auto()
@@ -1002,7 +1012,22 @@ class enumexests(unittest.TestCase):
         self.assertNotIsInstance(shift_result, B,  msg="B >> is not B")
         self.assertEqual(0b1000, shift_result,     msg="B >> equal")
 
-    def test_intflagex_not_operator(self):
+    def test_flagex_missing(self):
+        with self.assertRaises(ValueError) as ec:
+            class A(FlagEx):
+                V1 = auto()
+
+            v = A(0b10)
+        self.assertEqual("<flag 'A'> invalid value 2\n    given 0b0 10\n  allowed 0b0 01", ec.exception.args[0])
+
+        class B(IntFlagEx):
+            V1 = auto()
+
+        v = B(0b10)
+        self.assertIsInstance(v, B)
+        self.assertEqual(0b10, v.value)
+
+    def test_intflagex_not_operator_default(self):
         class A(IntFlagEx):
             F1 = auto()
             F2 = auto()
@@ -1017,17 +1042,160 @@ class enumexests(unittest.TestCase):
             F2 = auto()
             F3 = auto()
             F4 = auto()
+        class Y(IntFlag):
+            F1 = auto()
+            F2 = auto()
+            F3 = auto()
+            F4 = auto()
+            F5 = auto()
+            F6 = auto()
+
+        std_result = ~X.F1
+        not_result = ~A.F1
+        expected = ~1 & 0b1111
+
+        self.assertIsInstance(not_result, A,     msg="NOT is A")
+        self.assertEqual(expected, not_result,   msg="~ equal")
+        self.assertEqual(std_result, not_result, msg="~IntFlagEx == ~IntFlag")
+
+        std_result = ~Y.F5
+        not_result = ~B.F5
+        expected = ~(1 << 4) & 0b111111
+
+        self.assertIsInstance(not_result, B,     msg="NOT is B")
+        self.assertEqual(expected, not_result,   msg="~ equal")
+        self.assertEqual(std_result, not_result, msg="~IntFlagEx == ~IntFlag")
+
+    def test_intflagex_not_operator_strict(self):
+        class A(IntFlagEx, boundary=STRICT):
+            F1 = auto()
+            F2 = auto()
+            F3 = auto()
+            F4 = auto()
+        class B(A):
+            F5 = auto()
+            F6 = auto()
+
+        class X(IntFlag, boundary=STRICT):
+            F1 = auto()
+            F2 = auto()
+            F3 = auto()
+            F4 = auto()
 
         std_result = ~X.F1
         not_result = ~A.F1
 
         self.assertIsInstance(not_result, A,     msg="NOT is A")
-        self.assertEqual(~1,    not_result,      msg="NOT equal")
+        self.assertEqual(0b1110,    not_result,  msg="NOT equal")
         self.assertEqual(std_result, not_result, msg="~IntFlagEx == ~IntFlag")
 
         not_result = ~B.F5
         self.assertIsInstance(not_result, B,     msg="NOT is B")
-        self.assertEqual(~0b10000,  not_result,  msg="NOT equal")
+        self.assertEqual(0b101111,  not_result,  msg="NOT equal")
+
+        with self.assertRaises(ValueError) as ec:
+            not_result = ~(A(B.F5 | 0b10_000_000))
+        self.assertEqual("<flag 'B'> invalid value 144\n    given 0b0 10010000\n  allowed 0b0 00111111",
+                        ec.exception.args[0],
+                        msg="STRICT NOT error message"
+        )
+
+
+    def test_intflagex_not_operator_conform(self):
+        class A(IntFlagEx, boundary=CONFORM):
+            F1 = auto()
+            F2 = auto()
+            F3 = auto()
+            F4 = auto()
+        class B(A):
+            F5 = auto()
+            F6 = auto()
+
+        class X(IntFlag, boundary=CONFORM):
+            F1 = auto()
+            F2 = auto()
+            F3 = auto()
+            F4 = auto()
+
+        std_result = ~X.F1
+        not_result = ~A.F1
+
+        self.assertIsInstance(not_result, A,     msg="NOT is A")
+        self.assertEqual(0b1110,    not_result,  msg="NOT equal")
+        self.assertEqual(std_result, not_result, msg="~IntFlagEx == ~IntFlag")
+
+        not_result = ~B.F5
+        self.assertIsInstance(not_result, B,     msg="NOT is B")
+        self.assertEqual(0b101111,  not_result,  msg="NOT equal")
+
+        std_result = ~(X(B.F5 | 0b10_000_000))
+        not_result = ~(A(B.F5 | 0b10_000_000))
+        expected_result = ~0b10_010_000 & 0b1111
+        self.assertIsInstance(not_result, A,            msg="NOT is A")
+        self.assertEqual(expected_result, not_result,   msg="NOT equal")
+        self.assertEqual(std_result, not_result,        msg="~IntFlagEx == ~IntFlag")
+
+    def test_intflagex_not_operator_eject(self):
+        class A(IntFlagEx, boundary=EJECT):
+            F1 = auto()
+            F2 = auto()
+            F3 = auto()
+            F4 = auto()
+        class B(A):
+            F5 = auto()
+            F6 = auto()
+
+        class X(IntFlag, boundary=EJECT):
+            F1 = auto()
+            F2 = auto()
+            F3 = auto()
+            F4 = auto()
+
+        std_result = ~X.F1
+        not_result = ~A.F1
+
+        self.assertIsInstance(not_result, A,     msg="NOT is A")
+        self.assertEqual(0b1110,    not_result,  msg="NOT equal")
+        self.assertEqual(std_result, not_result, msg="~IntFlagEx == ~IntFlag")
+
+        not_result = ~B.F5
+        self.assertIsInstance(not_result, B,     msg="NOT is B")
+        self.assertEqual(0b101111,  not_result,  msg="NOT equal")
+
+        std_result = ~(X(B.F5 | 0b10_000_000))
+        not_result = ~(A(B.F5 | 0b10_000_000))
+        expected_result = ~0b10_010_000
+        self.assertIsInstance(not_result, int,          msg="NOT is int")
+        self.assertNotIsInstance(not_result, A,         msg="NOT is not A")
+        self.assertEqual(expected_result, not_result,   msg="NOT equal")
+        self.assertEqual(std_result, not_result,        msg="~IntFlagEx == ~IntFlag")
+
+    def test_intflagex_not_operator_keep(self):
+        class A(IntFlagEx, boundary=KEEP):
+            F1 = auto()
+            F2 = auto()
+            F3 = auto()
+            F4 = auto()
+        class B(A):
+            F5 = auto()
+            F6 = auto()
+
+        class X(IntFlag, boundary=KEEP):
+            F1 = auto()
+            F2 = auto()
+            F3 = auto()
+            F4 = auto()
+
+        std_result = ~X.F1
+        not_result = ~A.F1
+
+        self.assertIsInstance(not_result, A,     msg="NOT is A")
+        self.assertEqual(0b1110,    not_result,  msg="NOT equal")
+        self.assertEqual(std_result, not_result, msg="~IntFlagEx == ~IntFlag")
+
+        not_result = ~B.F5
+        self.assertIsInstance(not_result, B,     msg="NOT is B")
+        self.assertEqual(0b101111,  not_result,  msg="NOT equal")
 
         # std_result = ~(X(0b10_000_000))
         # not_result = ~(A(0b10_000_000))
@@ -1036,28 +1204,46 @@ class enumexests(unittest.TestCase):
         # self.assertEqual(expected_result, not_result,   msg="NOT equal")
         # self.assertEqual(std_result, not_result,        msg="~IntFlagEx == ~IntFlag")
 
-        std_result = ~(X(B.F5))
-        not_result = ~(A(B.F5))
-        expected_result = ~0b10000
+        std_result = ~(X(B.F5 | 0b10_000_000))
+        not_result = ~(A(B.F5 | 0b10_000_000))
+        expected_result = ~0b10_010_000 & 0b11_111_111
         self.assertIsInstance(not_result, A,            msg="NOT is A")
         self.assertEqual(expected_result, not_result,   msg="NOT equal")
         self.assertEqual(std_result, not_result,        msg="~IntFlagEx == ~IntFlag")
 
-    def test_flagex_missing(self):
+    def test_flagexboundary_strict(self):
+        class A(IntFlagEx, boundary=STRICT):
+            F1 = auto()
 
         with self.assertRaises(ValueError) as ec:
-            class A(FlagEx):
-                V1 = auto()
+            v = A(2)
+        self.assertEqual("<flag 'A'> invalid value 2\n    given 0b0 10\n  allowed 0b0 01", 
+                        ec.exception.args[0],  msg="FlagExBoundary STRICT error message")
 
-            v = A(0b10)
-        self.assertEqual("2 is not a valid enumexests.test_flagex_missing.<locals>.A", ec.exception.args[0])
+    def test_flagexboundary_conform(self):
+        class A(IntFlagEx, boundary=CONFORM):
+            F1 = auto()
 
-        class B(IntFlagEx):
-            V1 = auto()
+        v = A(3)
+        self.assertIsInstance(v, A,             msg="FlagExBoundary CONFORM isinstance A")
+        self.assertEqual(A.F1, v,               msg="FlagExBoundary CONFORM equal")
 
-        v = B(0b10)
-        self.assertIsInstance(v, B)
-        self.assertEqual(0b10, v.value)
+    def test_flagexboundary_eject(self):
+        class A(IntFlagEx, boundary=EJECT):
+            F1 = auto()
+
+        v = A(2)
+        self.assertIsInstance(v, int,           msg="FlagExBoundary CONFORM isinstance int")
+        self.assertNotIsInstance(v, FlagEx,     msg="FlagExBoundary CONFORM not isinstance FlagEx")
+        self.assertEqual(2, v,                  msg="FlagExBoundary CONFORM equal")
+
+    def test_flagexboundary_keep(self):
+        class A(IntFlagEx, boundary=KEEP):
+            F1 = auto()
+
+        v = A(2)
+        self.assertIsInstance(v, A,             msg="FlagExBoundary CONFORM isinstance A")
+        self.assertEqual(2, v.value,            msg="FlagExBoundary CONFORM equal")
 
     def test__generate_next_value__references(self):
         class _EnumEx(EnumEx):
@@ -1072,9 +1258,16 @@ class enumexests(unittest.TestCase):
         class _IntFlagEx(IntFlagEx):
             V1 = auto()
 
+        class _StrEnumEx(StrEnumEx):
+            V1 = auto()
+
+        class _ReprEx(int, ReprEnumEx):
+            V1 = auto()
+
         # TODO: Add other Flag methods
         self.assertIs(_FlagEx._generate_next_value_, Flag._generate_next_value_)
         self.assertIs(_IntFlagEx._generate_next_value_, IntFlag._generate_next_value_)
+        self.assertIs(_StrEnumEx._generate_next_value_, StrEnum._generate_next_value_)
 
 def _assert_invalidabstract(case:unittest.TestCase, cls:EnumEx, initvalue:Union[object,Callable], *args):
     with case.assertRaises(TypeError) as ec:

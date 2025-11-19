@@ -1,24 +1,25 @@
 import threading
-from types import DynamicClassAttribute
-from abc import ABC, ABCMeta, update_abstractmethods as _update_abstractmethods
+from abc import ABC, ABCMeta, update_abstractmethods
 import enum
-from enum import Enum, IntEnum, Flag, IntFlag
-from enum import _EnumDict, _make_class_unpicklable
+from enum import Enum, IntEnum, Flag, IntFlag, StrEnum, ReprEnum
+from enum import _is_single_bit, _proto_member
+from enum import _EnumDict
+from enum import STRICT, CONFORM, EJECT, KEEP
 from typing import Callable
 
 __all__ = [
-        'EnumExMeta',
-        'EnumEx', 'IntEnumEx', 'FlagEx', 'IntFlagEx',
+        'EnumExType', 'EnumExMeta',
+        'EnumEx', 'IntEnumEx', 'StrEnumEx', 'FlagEx', 'IntFlagEx', 'ReprEnumEx',
         ]
 
 # Dummy value for Enum and Flag as there are explicit checks for them
 # before they have been created.
 # This is also why there are checks in EnumType like `if Enum is not None`
-EnumEx = FlagEx = EJECT = ReprEnumEx = None
-# EnumEx = FlagEx = EJECT = _stdlib_enumexs = ReprEnumEx = None
+EnumEx = FlagEx = ReprEnumEx = None
+# EnumEx = FlagEx = _stdlib_enumexs = ReprEnumEx = None
 
 def _is_std_enum_type(type):
-    return type in (Enum, IntEnum, Flag, IntFlag)
+    return type in (Enum, IntEnum, Flag, IntFlag, StrEnum, ReprEnum)
 
 def _is_abstract_enum(cls):
     if issubclass(cls, EnumEx):
@@ -112,15 +113,14 @@ class EnumExType(enum.EnumMeta, ABCMeta):
         enum_dict = _EnumDict()
         enum_dict._cls_name = cls
         # inherit previous flags and _generate_next_value_ function
-        member_type, first_enum = metacls._get_mixins_(cls, bases)
-        first_std_base = metacls._find_std_type_(cls, bases)
+        member_type, first_enum, first_std_base = metacls._get_mixins_(cls, bases)
         if first_enum is not None:
             enum_dict['_generate_next_value_'] = getattr(
                     first_std_base, '_generate_next_value_', None,
                     )
-            
+        
+        # Copy member values to enum_dict from base for _generate_next_value_
         metacls._copy_existing_members(cls, bases, enum_dict)
-
         return enum_dict
     
     @staticmethod
@@ -130,162 +130,129 @@ class EnumExType(enum.EnumMeta, ABCMeta):
             if members:
                 for k, v in members.items():
                     enum_dict[k] = v.value
-    
-    def __new__(metacls, cls, bases, classdict):
+
+    def __new__(metacls, cls, bases, classdict, *, boundary=None, _simple=False, **kwds):
         # an Enum class is final once enumeration items have been defined; it
         # cannot be mixed with other types (int, float, etc.) if it has an
         # inherited __new__ unless a new __new__ is defined (or the resulting
         # class will fail).
+        #
+        if _simple:
+            return type.__new__(metacls, cls, bases, classdict, **kwds)
         #
         # remove any keys listed in _ignore_
         classdict.setdefault('_ignore_', []).append('_ignore_')
         ignore = classdict['_ignore_']
         for key in ignore:
             classdict.pop(key, None)
-        member_type, first_enum = metacls._get_mixins_(cls, bases)
-        __new__, save_new, use_args = metacls._find_new_(classdict, member_type,
-                                                        first_enum)
-
-        # save enum items into separate mapping so they don't get baked into
-        # the new class
-        enum_members = {k: classdict[k] for k in classdict._member_names}
-        for name in classdict._member_names:
-            del classdict[name]
-
+        #
+        # grab member names
+        member_names = classdict._member_names
+        #
+        # check for illegal enum names (any others?)
+        invalid_names = set(member_names) & {'mro', ''}
+        if invalid_names:
+            raise ValueError('invalid enum member name(s) %s'  % (
+                    ','.join(repr(n) for n in invalid_names)
+                    ))
+        #
         # adjust the sunders
         _order_ = classdict.pop('_order_', None)
-
-        # check for illegal enum names (any others?)
-        invalid_names = set(enum_members) & {'mro', ''}
-        if invalid_names:
-            raise ValueError('Invalid enum member name: {0}'.format(
-                ','.join(invalid_names)))
-
-        # create a default docstring if one has not been provided
-        if '__doc__' not in classdict:
-            classdict['__doc__'] = 'An enumeration.'
-
-        enum_class = type.__new__(metacls, cls, bases, classdict)
-        enum_class._member_names_ = []               # names in definition order
-        enum_class._member_map_ = {}                 # name->value map
-        enum_class._member_type_ = member_type
-
-        # save DynamicClassAttribute attributes from super classes so we know
-        # if we can take the shortcut of storing members in the class dict
-        dynamic_attributes = {
-                k for c in enum_class.mro()
-                for k, v in c.__dict__.items()
-                if isinstance(v, DynamicClassAttribute)
-                }
-
-        # Reverse value->name map for hashable values.
-        enum_class._value2member_map_ = {}
-
-        # If a custom type is mixed into the Enum, and it does not know how
-        # to pickle itself, pickle.dumps will succeed but pickle.loads will
-        # fail.  Rather than have the error show up later and possibly far
-        # from the source, sabotage the pickle protocol for this class so
-        # that pickle.dumps also fails.
+        # convert to normal dict
+        classdict = dict(classdict.items())
         #
-        # However, if the new class implements its own __reduce_ex__, do not
-        # sabotage -- it's on them to make sure it works correctly.  We use
-        # __reduce_ex__ instead of any of the others as it is preferred by
-        # pickle over __reduce__, and it handles all pickle protocols.
-        if '__reduce_ex__' not in classdict:
-            if member_type is not object:
-                methods = ('__getnewargs_ex__', '__getnewargs__',
-                        '__reduce_ex__', '__reduce__')
-                if not any(m in member_type.__dict__ for m in methods):
-                    if '__new__' in classdict:
-                        # too late, sabotage
-                        _make_class_unpicklable(enum_class)
-                    else:
-                        # final attempt to verify that pickling would work:
-                        # travel mro until __new__ is found, checking for
-                        # __reduce__ and friends along the way -- if any of them
-                        # are found before/when __new__ is found, pickling should
-                        # work
-                        sabotage = None
-                        for chain in bases:
-                            for base in chain.__mro__:
-                                if base is object:
-                                    continue
-                                elif any(m in base.__dict__ for m in methods):
-                                    # found one, we're good
-                                    sabotage = False
-                                    break
-                                elif '__new__' in base.__dict__:
-                                    # not good
-                                    sabotage = True
-                                    break
-                            if sabotage is not None:
-                                break
-                        if sabotage:
-                            _make_class_unpicklable(enum_class)
-
-        # instantiate them, checking for duplicates as we go
-        # we instantiate first instead of checking for duplicates first in case
-        # a custom __new__ is doing something funky with the values -- such as
-        # auto-numbering ;)
-        for member_name in classdict._member_names:
-            value = enum_members[member_name]
-            if not isinstance(value, tuple):
-                args = (value, )
-            else:
-                args = value
-            if member_type is tuple:   # special case for tuple enums
-                args = (args, )     # wrap it one more time
-            if not use_args:
-                enum_member = __new__(enum_class)
-                if not hasattr(enum_member, '_value_'):
-                    enum_member._value_ = value
-            else:
-                enum_member = __new__(enum_class, *args)
-                if not hasattr(enum_member, '_value_'):
-                    if member_type is object:
-                        enum_member._value_ = value
-                    else:
-                        enum_member._value_ = member_type(*args)
-            value = enum_member._value_
-            enum_member._name_ = member_name
-            enum_member.__objclass__ = enum_class
-            enum_member.__init__(*args)
-            # If another member with the same value was already defined, the
-            # new member becomes an alias to the existing one.
-            for name, canonical_member in enum_class._member_map_.items():
-                if canonical_member._value_ == enum_member._value_:
-                    enum_member = canonical_member
-                    break
-            else:
-                # Aliases don't appear in member names (only in __members__).
-                enum_class._member_names_.append(member_name)
-            # performance boost for any member that would not shadow
-            # a DynamicClassAttribute
-            if member_name not in dynamic_attributes:
-                setattr(enum_class, member_name, enum_member)
-            # now add to _member_map_
-            enum_class._member_map_[member_name] = enum_member
-            try:
-                # This may fail if value is not hashable. We can't add the value
-                # to the map, and by-value lookups for this value will be
-                # linear.
-                enum_class._value2member_map_[value] = enum_member
-            except TypeError:
-                pass
-
+        # data type of member and the controlling Enum class
+        member_type, first_enum, std_base = metacls._get_mixins_(cls, bases)
+        __new__, save_new, use_args = metacls._find_new_(
+                classdict, member_type, first_enum,
+                )
+        classdict['_new_member_'] = __new__
+        classdict['_use_args_'] = use_args
+        #
+        # convert future enum members into temporary _proto_members
+        # and record integer values in case this will be a Flag
+        flag_mask = 0
+        for name in member_names:
+            value = classdict[name]
+            if isinstance(value, int):
+                flag_mask |= value
+            classdict[name] = _proto_member(value)
+        #
+        # house-keeping structures
+        classdict['_member_names_'] = []
+        classdict['_member_map_'] = {}
+        classdict['_value2member_map_'] = {}
+        classdict['_unhashable_values_'] = []
+        classdict['_member_type_'] = member_type
+        # now set the __repr__ for the value
+        classdict['_value_repr_'] = metacls._find_data_repr_(cls, bases)
+        #
+        # Flag structures (will be removed if final class is not a Flag
+        classdict['_boundary_'] = (
+                boundary
+                or getattr(first_enum, '_boundary_', None)
+                )
+        classdict['_flag_mask_'] = flag_mask
+        classdict['_all_bits_'] = 2 ** ((flag_mask).bit_length()) - 1
+        classdict['_inverted_'] = None
+        try:
+            exc = None
+            enum_class = type.__new__(metacls, cls, bases, classdict, **kwds)
+        except RuntimeError as e:
+            # any exceptions raised by member.__new__ will get converted to a
+            # RuntimeError, so get that original exception back and raise it instead
+            exc = e.__cause__ or e
+        if exc is not None:
+            raise exc
+        #
+        # update classdict with any changes made by __init_subclass__
+        classdict.update(enum_class.__dict__)
+        #
         # double check that repr and friends are not the mixin's or various
         # things break (such as pickle)
         # however, if the method is defined in the Enum itself, don't replace
         # it
+        #
+        # Also, special handling for ReprEnum
+        if ReprEnumEx is not None and ReprEnumEx in bases:
+            if member_type is object:
+                raise TypeError(
+                        'ReprEnum subclasses must be mixed with a data type (i.e.'
+                        ' int, str, float, etc.)'
+                        )
+            if '__format__' not in classdict:
+                enum_class.__format__ = member_type.__format__
+                classdict['__format__'] = enum_class.__format__
+            if '__str__' not in classdict:
+                method = member_type.__str__
+                if method is object.__str__:
+                    # if member_type does not define __str__, object.__str__ will use
+                    # its __repr__ instead, so we'll also use its __repr__
+                    method = member_type.__repr__
+                enum_class.__str__ = method
+                classdict['__str__'] = enum_class.__str__
         for name in ('__repr__', '__str__', '__format__', '__reduce_ex__'):
-            if name in classdict:
-                continue
-            class_method = getattr(enum_class, name)
-            obj_method = getattr(member_type, name, None)
-            enum_method = getattr(first_enum, name, None)
-            if obj_method is not None and obj_method is class_method:
-                setattr(enum_class, name, enum_method)
-
+            if name not in classdict:
+                # check for mixin overrides before replacing
+                enum_method = getattr(first_enum, name)
+                found_method = getattr(enum_class, name)
+                object_method = getattr(object, name)
+                data_type_method = getattr(member_type, name)
+                if found_method in (data_type_method, object_method):
+                    setattr(enum_class, name, enum_method)
+        #
+        # for Flag, add __or__, __and__, __xor__, and __invert__
+        if FlagEx is not None and issubclass(enum_class, FlagEx):
+            for name in (
+                    '__or__', '__and__', '__xor__',
+                    '__ror__', '__rand__', '__rxor__',
+                    '__invert__'
+                ):
+                if name not in classdict:
+                    enum_method = getattr(FlagEx, name)
+                    setattr(enum_class, name, enum_method)
+                    classdict[name] = enum_method
+        #
         # replace any other __new__ with our own (as long as Enum is not None,
         # anyway) -- again, this is to support pickle
         if EnumEx is not None:
@@ -294,26 +261,74 @@ class EnumExType(enum.EnumMeta, ABCMeta):
             if save_new:
                 enum_class.__new_member__ = __new__
             enum_class.__new__ = EnumEx.__new__
-
+        #
         # py3 support for definition order (helps keep py2/py3 code in sync)
+        #
+        # _order_ checking is spread out into three/four steps
+        # - if enum_class is a Flag:
+        #   - remove any non-single-bit flags from _order_
+        # - remove any aliases from _order_
+        # - check that _order_ and _member_names_ match
+        #
+        # step 1: ensure we have a list
         if _order_ is not None:
             if isinstance(_order_, str):
                 _order_ = _order_.replace(',', ' ').split()
+        #
+        # remove Flag structures if final class is not a Flag
+        if (
+                FlagEx is None and cls != 'Flag'
+                or FlagEx is not None and not issubclass(enum_class, FlagEx)
+            ):
+            delattr(enum_class, '_boundary_')
+            delattr(enum_class, '_flag_mask_')
+            delattr(enum_class, '_all_bits_')
+            delattr(enum_class, '_inverted_')
+        elif FlagEx is not None and issubclass(enum_class, FlagEx):
+            # ensure _all_bits_ is correct and there are no missing flags
+            single_bit_total = 0
+            multi_bit_total = 0
+            for flag in enum_class._member_map_.values():
+                flag_value = flag._value_
+                if _is_single_bit(flag_value):
+                    single_bit_total |= flag_value
+                else:
+                    # multi-bit flags are considered aliases
+                    multi_bit_total |= flag_value
+            enum_class._flag_mask_ = single_bit_total
+            #
+            # set correct __iter__
+            member_list = [m._value_ for m in enum_class]
+            if member_list != sorted(member_list):
+                enum_class._iter_member_ = enum_class._iter_member_by_def_
+            if _order_:
+                # _order_ step 2: remove any items from _order_ that are not single-bit
+                _order_ = [
+                        o
+                        for o in _order_
+                        if o not in enum_class._member_map_ or _is_single_bit(enum_class[o]._value_)
+                        ]
+        #
+        if _order_:
+            # _order_ step 3: remove aliases from _order_
+            _order_ = [
+                    o
+                    for o in _order_
+                    if (
+                        o not in enum_class._member_map_
+                        or
+                        (o in enum_class._member_map_ and o in enum_class._member_names_)
+                        )]
+            # _order_ step 4: verify that _order_ and _member_names_ match
             if _order_ != enum_class._member_names_:
-                raise TypeError('member order does not match _order_')
-            
+                raise TypeError(
+                        'member order does not match _order_:\n  %r\n  %r'
+                        % (enum_class._member_names_, _order_)
+                        )
+
         if issubclass(enum_class, ABC):
-            # This python version handles class initializing quite differently than newer versions.
-            # Newer versions don't rely on object.__new__ to initialize values, where this version does not.
-            # Using object.__new__ causes the "Can't insantiate abstract class..." error during value initialization.
-            # Because we have to inherit ABCMeta to allow ABC to be used, and can't use ABCMeta.__new__ or the error will raise,
-            # we have to handle updating __abstractmethods__ ourself (As well as raising the error).
-            # We could import _abc._abc_init right here and call it, this would build __abstractmethods__ and avoid raising during value initialization,
-            # but we'd still have to raise the error manually, because Enum internally does a lookup and never calls object.__new__,
-            # and the only enum types that actually creates new instances are Flag, and IntFlag via _missing_/_create_pseudo.., and IntFlag uses int.__new__ instead.
-            # This would also mean _abc_impl would be created and never used (apart from FlagEx).
             enum_class.__abstractmethods__ = None
-            _update_abstractmethods(enum_class)
+            update_abstractmethods(enum_class)
             setattr(enum_class, '_isabstractenum_', True)
             EnumExType._install_abstract_getattribute(enum_class)
             EnumExType._install_abstract_setattr(enum_class)
@@ -335,16 +350,8 @@ class EnumExType(enum.EnumMeta, ABCMeta):
     def _check_for_existing_members_(mcls, class_name, bases):
         pass # Allow inheritance
 
-    @staticmethod
-    def _find_std_type_(class_name, bases):
-        for chain in bases:
-            for base in chain.__mro__:
-                if _is_std_enum_type(base):
-                    return base
-        raise TypeError("EnumEx missing a std Enum base.")
-    
-    @staticmethod
-    def _get_mixins_(class_name, bases):
+    @classmethod
+    def _get_mixins_(mcls, class_name, bases):
         """
         Returns the type for creating enum members, and the first inherited
         enum class.
@@ -352,54 +359,67 @@ class EnumExType(enum.EnumMeta, ABCMeta):
         bases: the tuple of bases that was given to __new__
         """
         if not bases or (len(bases) == 1 and bases[0] is Enum):
-            return object, EnumEx
+            return object, EnumEx, Enum
 
-        def _find_data_type(bases):
-            data_types = set()
-            for chain in bases:
-                candidate = None
-                for base in chain.__mro__:
-                    if base in (object, ABC):
-                        continue
-                    elif issubclass(base, Enum):
-                        if base._member_type_ is not object:
-                            data_types.add(base._member_type_)
-                            break
-                    elif '__new__' in base.__dict__:
-                        if issubclass(base, Enum):
-                            continue
-                        data_types.add(candidate or base)
-                        break
-                    else:
-                        candidate = candidate or base
-            if len(data_types) > 1:
-                raise TypeError('%r: too many data types: %r' % (class_name, data_types))
-            elif data_types:
-                return data_types.pop()
-            else:
-                return None
-
-        # ensure final parent class is an Enum derivative, find any concrete
-        # data type, and check that Enum has no members
+        # ensure final parent class is an EnumEx derivative, find any concrete
+        # data type, and check that EnumEx has no members
         # If the last base is a std enum, skip it to find the first EnumEx base.
         first_enumex = bases[-1] if len(bases) == 1 or not _is_std_enum_type(bases[-1]) else bases[-2]
-        if not issubclass(first_enumex, Enum):
+        if not isinstance(first_enumex, EnumExType):            
             raise TypeError("new enumerations should be created as "
                     "`EnumName([mixin_type, ...] [data_type,] enum_type)`")
-        member_type = _find_data_type(bases) or object
-        return member_type, first_enumex
+        member_type = mcls._find_data_type_(class_name, bases) or object
+        std_base = mcls._find_std_type_(class_name, bases)
+        return member_type, first_enumex, std_base
     
-    # If enum.EnumMeta's _find_new_ is used, EnumEx.__new__ is called during class initialization instead of object.__new__
-    @staticmethod
-    def _find_new_(classdict, member_type, first_enum):
+    @classmethod
+    def _find_std_type_(mcls, class_name, bases):
+        for chain in bases:
+            for base in chain.__mro__:
+                if _is_std_enum_type(base):
+                    return base
+        raise TypeError("EnumEx missing a std Enum base.")
+ 
+    @classmethod
+    def _find_data_type_(mcls, class_name, bases):
+        # a datatype has a __new__ method
+        data_types = set()
+        base_chain = set()
+        for chain in bases:
+            candidate = None
+            for base in chain.__mro__:
+                base_chain.add(base)
+                if base is object:
+                    continue
+                # Skip standard Enum types, they are simply for instance checks.
+                elif _is_std_enum_type(base):
+                    continue
+                elif issubclass(base, EnumEx):
+                    if base._member_type_ is not object:
+                        data_types.add(base._member_type_)
+                        break
+                elif '__new__' in base.__dict__ or '__init__' in base.__dict__:
+                    if issubclass(base, EnumEx):
+                        continue
+                    data_types.add(candidate or base)
+                    break
+                else:
+                    candidate = candidate or base
+        if len(data_types) > 1:
+            raise TypeError('too many data types for %r: %r' % (class_name, data_types))
+        elif data_types:
+            return data_types.pop()
+        else:
+            return None
+
+    @classmethod
+    def _find_new_(mcls, classdict, member_type, first_enum):
         """
         Returns the __new__ to be used for creating the enum members.
-
 
         classdict: the class dictionary given to __new__
         member_type: the data type whose __new__ will be used by default
         first_enum: enumeration to check for an overriding __new__
-
         """
         # now find the correct __new__, checking to see of one was defined
         # by the user; also check earlier enum classes in case a __new__ was
@@ -407,7 +427,7 @@ class EnumExType(enum.EnumMeta, ABCMeta):
         __new__ = classdict.get('__new__', None)
 
         # should __new__ be saved as __new_member__ later?
-        save_new = __new__ is not None
+        save_new = first_enum is not None and __new__ is not None
 
         if __new__ is None:
             # check all possibles for __new_member__ before falling back to
@@ -419,7 +439,6 @@ class EnumExType(enum.EnumMeta, ABCMeta):
                             None,
                             None.__new__,
                             object.__new__,
-                            Enum.__new__,
                             EnumEx.__new__,
                             }:
                         __new__ = target
@@ -432,7 +451,7 @@ class EnumExType(enum.EnumMeta, ABCMeta):
         # if a non-object.__new__ is used then whatever value/tuple was
         # assigned to the enum member name will be passed to __new__ and to the
         # new enum member's __init__
-        if __new__ is object.__new__:
+        if first_enum is None or __new__ in (EnumEx.__new__, object.__new__):
             use_args = False
         else:
             use_args = True
@@ -587,7 +606,6 @@ class EnumExType(enum.EnumMeta, ABCMeta):
 
         cls.__delattr__ = custom_delattr
         cls.__delattr__._original__delattr__ = original___delattr__ # Store the original base so custom___delattr__ isn't called more than once
-        
     
 EnumExMeta = EnumExType
 
@@ -595,25 +613,42 @@ class EnumEx(Enum, metaclass=EnumExMeta):
     
     def __new__(cls, value):
         _enforce_abstract(cls)
-        return Enum.__new__(cls, value)
+        return super().__new__(cls, value)
+    
+class ReprEnumEx(ReprEnum, EnumEx):
+    """
+    Only changes the repr(), leaving str() and format() to the mixed-in type.
+    """
 
-class IntEnumEx(IntEnum, EnumEx):
-    """Enum where members are also (and must be) ints"""
+class IntEnumEx(IntEnum, ReprEnumEx):
+    """
+    Enum where members are also (and must be) ints
+    """
 
-class FlagEx(Flag, EnumEx):
+class FlagEx(Flag, EnumEx, boundary=STRICT):
+    """
+    Support for flags
+    """
     def _get_value(self, flag):
         if (isinstance(flag, self.__class__) 
             # If right(flag) is a base of left, return its value to stop it from creating a base instance.
-            or (isinstance(flag, FlagEx) and isinstance(self, flag.__class__))):
+            or (isinstance(flag, FlagEx) and isinstance(self, flag.__class__))
+            # If left(self) is IntFlag, and right is abstract int based enum, get value to avoid "Can't instantiate abstract..." error
+            # TODO: Check if self is IntFlag instead? Currently int to support custom int based Flag types
+            or (isinstance(self, int) and isinstance(flag, int) and _is_abstract_enum(flag.__class__))):
             return flag._value_
         elif self._member_type_ is not object and isinstance(flag, self._member_type_):
             return flag
         return NotImplemented
-    
+        
     def __or__(self, other):
         other_value = self._get_value(other)
         if other_value is NotImplemented:
             return NotImplemented
+
+        for flag in self, other:
+            if self._get_value(flag) is None:
+                raise TypeError(f"'{flag}' cannot be combined with other flags with |")
         value = self._value_
         return self.__class__(value | other_value)
 
@@ -621,6 +656,10 @@ class FlagEx(Flag, EnumEx):
         other_value = self._get_value(other)
         if other_value is NotImplemented:
             return NotImplemented
+
+        for flag in self, other:
+            if self._get_value(flag) is None:
+                raise TypeError(f"'{flag}' cannot be combined with other flags with &")
         value = self._value_
         return self.__class__(value & other_value)
 
@@ -628,14 +667,47 @@ class FlagEx(Flag, EnumEx):
         other_value = self._get_value(other)
         if other_value is NotImplemented:
             return NotImplemented
+
+        for flag in self, other:
+            if self._get_value(flag) is None:
+                raise TypeError(f"'{flag}' cannot be combined with other flags with ^")
         value = self._value_
         return self.__class__(value ^ other_value)
-    
-    __ror__ = __or__
+
+    # def __invert__(self):
+    #     if self._get_value(self) is None:
+    #         raise TypeError(f"'{self}' cannot be inverted")
+
+    #     if self._inverted_ is None:
+    #         if self._boundary_ in (EJECT, KEEP):
+    #             self._inverted_ = self.__class__(~self._value_)
+    #         else:
+    #             self._inverted_ = self.__class__(self._singles_mask_ & ~self._value_)
+    #     return self._inverted_
+
     __rand__ = __and__
+    __ror__ = __or__
     __rxor__ = __xor__
     
-class IntFlagEx(IntFlag, FlagEx):
-    """Support for integer-based Flags"""
+class IntFlagEx(IntFlag, ReprEnumEx, FlagEx, boundary=KEEP):
+    """
+    Support for integer-based Flags
+    """
+
+class StrEnumEx(StrEnum, ReprEnumEx):
+    """
+    Enum where members are also (and must be) strings
+    """
 
 # _stdlib_enumexs = IntEnumEx, StrEnumEx, IntFlagEx
+
+def _enforce_abstract(cls):
+    """
+    Raises a TypeError if an attempt to instantiate an unimplemented abstract enum is made.
+
+    The EnumTypeEx metaclass does not create instances with __init__(), so we have to check for unimplemented abstract methods manually.
+    """
+
+    if _is_abstract_enum(cls):
+        methods = cls.__abstractmethods__
+        raise TypeError(f"Can't instantiate abstract class {cls.__name__} with abstract method{'' if len(methods) == 1 else 's'}", *methods)

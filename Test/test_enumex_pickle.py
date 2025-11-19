@@ -36,6 +36,13 @@ class IntFlagExB(IntFlagExA):
     V3 = auto()
     V4 = auto()
 
+class StrEnumExA(StrEnumEx):
+    V1 = auto()
+    V2 = auto()
+class StrEnumExB(StrEnumExA):
+    V3 = auto()
+    V4 = auto()
+
 class EnumExPickleTests(unittest.TestCase):
 
     def test_pickle_enumex_member(self):
@@ -54,6 +61,10 @@ class EnumExPickleTests(unittest.TestCase):
         _test_pickle_member(self, IntFlagExA.V1)
         _test_pickle_member(self, IntFlagExB.V1)
 
+    def test_pickle_StrEnumex_member(self):
+        _test_pickle_member(self, StrEnumExA.V1)
+        _test_pickle_member(self, StrEnumExB.V1)
+
     def test_pickle_enumex_types(self):
         def test_pickle_type(enum_type:type[EnumEx]):
             self.assertTrue(issubclass(enum_type, EnumEx), msg=f"Type to pickle is EnumEx subclass")
@@ -71,6 +82,8 @@ class EnumExPickleTests(unittest.TestCase):
         test_pickle_type(FlagExB)
         test_pickle_type(IntFlagExA)
         test_pickle_type(IntFlagExB)
+        test_pickle_type(StrEnumExA)
+        test_pickle_type(StrEnumExB)
 
 
 def _test_pickle_member(case:unittest.TestCase, enum_member:EnumEx, msg:str = None):
