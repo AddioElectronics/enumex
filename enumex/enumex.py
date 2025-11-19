@@ -170,12 +170,8 @@ class EnumExType(enum.EnumMeta, ABCMeta):
         classdict['_use_args_'] = use_args
         #
         # convert future enum members into temporary _proto_members
-        # and record integer values in case this will be a Flag
-        flag_mask = 0
         for name in member_names:
             value = classdict[name]
-            if isinstance(value, int):
-                flag_mask |= value
             classdict[name] = _proto_member(value)
         #
         # house-keeping structures
@@ -192,8 +188,9 @@ class EnumExType(enum.EnumMeta, ABCMeta):
                 boundary
                 or getattr(first_enum, '_boundary_', None)
                 )
-        classdict['_flag_mask_'] = flag_mask
-        classdict['_all_bits_'] = 2 ** ((flag_mask).bit_length()) - 1
+        classdict['_flag_mask_'] = 0
+        classdict['_singles_mask_'] = 0
+        classdict['_all_bits_'] = 0
         classdict['_inverted_'] = None
         try:
             exc = None
@@ -249,7 +246,7 @@ class EnumExType(enum.EnumMeta, ABCMeta):
                     '__invert__'
                 ):
                 if name not in classdict:
-                    enum_method = getattr(FlagEx, name)
+                    enum_method = getattr(Flag, name)
                     setattr(enum_class, name, enum_method)
                     classdict[name] = enum_method
         #
@@ -282,21 +279,10 @@ class EnumExType(enum.EnumMeta, ABCMeta):
             ):
             delattr(enum_class, '_boundary_')
             delattr(enum_class, '_flag_mask_')
+            delattr(enum_class, '_singles_mask_')
             delattr(enum_class, '_all_bits_')
             delattr(enum_class, '_inverted_')
         elif FlagEx is not None and issubclass(enum_class, FlagEx):
-            # ensure _all_bits_ is correct and there are no missing flags
-            single_bit_total = 0
-            multi_bit_total = 0
-            for flag in enum_class._member_map_.values():
-                flag_value = flag._value_
-                if _is_single_bit(flag_value):
-                    single_bit_total |= flag_value
-                else:
-                    # multi-bit flags are considered aliases
-                    multi_bit_total |= flag_value
-            enum_class._flag_mask_ = single_bit_total
-            #
             # set correct __iter__
             member_list = [m._value_ for m in enum_class]
             if member_list != sorted(member_list):
@@ -325,7 +311,7 @@ class EnumExType(enum.EnumMeta, ABCMeta):
                         'member order does not match _order_:\n  %r\n  %r'
                         % (enum_class._member_names_, _order_)
                         )
-
+            
         if issubclass(enum_class, ABC):
             enum_class.__abstractmethods__ = None
             update_abstractmethods(enum_class)
@@ -335,9 +321,10 @@ class EnumExType(enum.EnumMeta, ABCMeta):
             EnumExType._install_abstract_delattr(enum_class)
         else:
             setattr(enum_class,'_isabstractenum_', False)
-            
+
         return enum_class
-    
+
+
     # Override type checks so ABCMeta doesn't raise errors
     # See more info in EnumExType.__new__, where _update_abstractmethods is invoked.
     def __subclasscheck__(cls, subclass):
@@ -394,12 +381,12 @@ class EnumExType(enum.EnumMeta, ABCMeta):
                 # Skip standard Enum types, they are simply for instance checks.
                 elif _is_std_enum_type(base):
                     continue
-                elif issubclass(base, EnumEx):
+                elif isinstance(base, EnumExType):
                     if base._member_type_ is not object:
                         data_types.add(base._member_type_)
                         break
-                elif '__new__' in base.__dict__ or '__init__' in base.__dict__:
-                    if issubclass(base, EnumEx):
+                elif '__new__' in base.__dict__ or '__dataclass_fields__' in base.__dict__:
+                    if isinstance(base, EnumExType):
                         continue
                     data_types.add(candidate or base)
                     break
@@ -640,54 +627,6 @@ class FlagEx(Flag, EnumEx, boundary=STRICT):
         elif self._member_type_ is not object and isinstance(flag, self._member_type_):
             return flag
         return NotImplemented
-        
-    def __or__(self, other):
-        other_value = self._get_value(other)
-        if other_value is NotImplemented:
-            return NotImplemented
-
-        for flag in self, other:
-            if self._get_value(flag) is None:
-                raise TypeError(f"'{flag}' cannot be combined with other flags with |")
-        value = self._value_
-        return self.__class__(value | other_value)
-
-    def __and__(self, other):
-        other_value = self._get_value(other)
-        if other_value is NotImplemented:
-            return NotImplemented
-
-        for flag in self, other:
-            if self._get_value(flag) is None:
-                raise TypeError(f"'{flag}' cannot be combined with other flags with &")
-        value = self._value_
-        return self.__class__(value & other_value)
-
-    def __xor__(self, other):
-        other_value = self._get_value(other)
-        if other_value is NotImplemented:
-            return NotImplemented
-
-        for flag in self, other:
-            if self._get_value(flag) is None:
-                raise TypeError(f"'{flag}' cannot be combined with other flags with ^")
-        value = self._value_
-        return self.__class__(value ^ other_value)
-
-    # def __invert__(self):
-    #     if self._get_value(self) is None:
-    #         raise TypeError(f"'{self}' cannot be inverted")
-
-    #     if self._inverted_ is None:
-    #         if self._boundary_ in (EJECT, KEEP):
-    #             self._inverted_ = self.__class__(~self._value_)
-    #         else:
-    #             self._inverted_ = self.__class__(self._singles_mask_ & ~self._value_)
-    #     return self._inverted_
-
-    __rand__ = __and__
-    __ror__ = __or__
-    __rxor__ = __xor__
     
 class IntFlagEx(IntFlag, ReprEnumEx, FlagEx, boundary=KEEP):
     """
