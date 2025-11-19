@@ -184,6 +184,7 @@ class EnumExType(enum.EnumMeta, ABCMeta):
         classdict['_member_map_'] = {}
         classdict['_value2member_map_'] = {}
         classdict['_unhashable_values_'] = []
+        classdict['_unhashable_values_map_'] = {}
         classdict['_member_type_'] = member_type
         # now set the __repr__ for the value
         classdict['_value_repr_'] = metacls._find_data_repr_(cls, bases)
@@ -199,7 +200,10 @@ class EnumExType(enum.EnumMeta, ABCMeta):
         classdict['_inverted_'] = None
         try:
             exc = None
+            classdict['_%s__in_progress' % cls] = True
             enum_class = type.__new__(metacls, cls, bases, classdict, **kwds)
+            classdict['_%s__in_progress' % cls] = False
+            delattr(enum_class, '_%s__in_progress' % cls)
         except Exception as e:
             # since 3.12 the line "Error calling __set_name__ on '_proto_member' instance ..."
             # is tacked on to the error instead of raising a RuntimeError

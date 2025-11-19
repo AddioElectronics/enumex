@@ -4,7 +4,7 @@ An extension to the standard enum with polymorphism, and abstract methods.
 
 ## Install
 
-**Python**: 3.9.0 to 3.12.x
+**Python**: 3.9.0 to 3.13.x
 
 Each package version is tightly coupled to the minor Python version.
 Depending on which Python version your environment is currently using, pip will install the correct package.

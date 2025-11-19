@@ -130,8 +130,8 @@ class EnumExTests(unittest.TestCase):
     def test_enumex_auto_inheritance(self):
         class A(EnumEx):
             V1 = auto()
-            V2 = '2'
-            V3 = 3
+            V2 = 2
+            V3 = auto()
         class B(A):
             V4 = auto()
             V5 = auto()
@@ -141,10 +141,10 @@ class EnumExTests(unittest.TestCase):
         self.assertIsInstance(B.V4,     A)
         self.assertNotIsInstance(A.V1,  B)
         self.assertEqual(1,             A.V1.value)
-        self.assertEqual('2',           A.V2.value)
+        self.assertEqual(2,             A.V2.value)
         self.assertEqual(3,             A.V3.value)
         self.assertEqual(1,             B.V1.value)
-        self.assertEqual('2',           B.V2.value)
+        self.assertEqual(2,             B.V2.value)
         self.assertEqual(3,             B.V3.value)
         self.assertEqual(4,             B.V4.value)
         self.assertEqual(5,             B.V5.value)

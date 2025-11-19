@@ -2,6 +2,10 @@
 
 The change log contains a mix of functional and notable technical changes to enumex.py, for more info on the base changes you will need to see the Python change log.
 
+## V3.13.0
+- Mirroring changes to `enum.py` overrides
+	- Member values must be sortable (no mixing `str` with `int`)  
+	
 ## V3.12.3
 - Mirroring changes to `enum.py` overrides
 - Removed redundant `FlagEx` operators (`enum.Flag` invoking `_get_value` again )
