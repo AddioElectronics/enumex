@@ -4,11 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "enumex"
-version = "0"
+version = "3.9"
 description = "An extension to the standard enum with polymorphism, and abstract methods."
 readme = "README.md"
 license = "Python-2.0"
 authors = [{ name = "Addio" }]
+requires-python = ">=3.9,<3.10"
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
@@ -21,7 +22,6 @@ Documentation = "https://github.com/AddioElectronics/enumex#readme"
 Changelog = "https://github.com/AddioElectronics/enumex/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
-where = ["enumex"]
 exclude = ["Test*", "Examples*"]
 
 [tool.pytest.ini_options]
